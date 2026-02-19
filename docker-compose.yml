@@ -1,0 +1,39 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    environment:
+      WEBHOOK_SECRET: supersecret
+      CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
+      AI_URL: http://ai-mock:8001/agent/handle
+    ports:
+      - "8000:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: ["celery", "-A", "app.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=1"]
+    environment:
+      CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
+      AI_URL: http://ai-mock:8001/agent/handle
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  ai-mock:
+    build: .
+    command: ["uvicorn", "app.ai_mock:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
